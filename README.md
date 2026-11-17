@@ -18,7 +18,7 @@ are never removed for any method.
 
 - [cloudnative-pg #6009](https://github.com/cloudnative-pg/cloudnative-pg/issues/6009)
   "VolumeSnapshot retention policy": open since 2024-11, 46 reactions, 30 comments. Users
-  have asked the stale bot to keep it open five times (latest 2026-11-05: "this would solve
+  have asked the stale bot to keep it open at least five times (latest 2026-11-05: "this would solve
   a hacky workaround you have to do"). The workarounds in the thread are hand-written
   controllers and `kube-janitor` annotations, which delete the snapshots but leave the
   `Backup` objects pointing at them.
@@ -30,8 +30,9 @@ are never removed for any method.
   comment asks "Surely everyone that uses a ScheduledBackup is hitting this problem? What are
   people doing?"
 
-The only related tool found on GitHub deletes `Backup` objects older than N days and does not
-handle snapshots or keep a restore base.
+The only related tool found on GitHub,
+[Kaurin/cnpg-backups-cleanup](https://github.com/Kaurin/cnpg-backups-cleanup), deletes `Backup`
+objects older than N days; it does not handle snapshots or keep a restore base.
 
 ## How it decides
 
@@ -114,7 +115,25 @@ From the end-to-end test (kind, CSI hostpath driver, CloudNativePG 1.30.1; five 
 snapshot backups, the Backup object of the fifth deleted by hand), evaluated 30 days ahead:
 
 ```
-EXAMPLE_PLACEHOLDER
+$ cnpg-prune plan -now=2026-12-17T07:29:05Z
+Cluster app/pg
+  policy: retention 7d, keep-last 2 (retention from spec.backup.retentionPolicy, keep-last from annotation)
+  KEEP    pg-b4                           volumeSnapshot     completed   2026-11-17T07:28:47Z  newest completed backup
+  KEEP    pg-b3                           volumeSnapshot     completed   2026-11-17T07:28:32Z  among the newest 2
+  DELETE  pg-b2                           volumeSnapshot     completed   2026-11-17T07:28:19Z  finished before the 7d window
+          VolumeSnapshot pg-b2: content snapcontent-bc6b0fde-91b6-4ce1-9eba-0d38fe21f8dc is deleted with it (deletionPolicy Delete)
+          VolumeSnapshot pg-b2-wal: content snapcontent-df8a701a-c657-4811-a726-8a45bdefbee6 is deleted with it (deletionPolicy Delete)
+  DELETE  pg-b1                           volumeSnapshot     completed   2026-11-17T07:28:05Z  finished before the 7d window
+          VolumeSnapshot pg-b1: content snapcontent-e383ce31-bb9b-4d94-8d79-c0d955bfec82 is deleted with it (deletionPolicy Delete)
+          VolumeSnapshot pg-b1-wal: content snapcontent-2cc50eb2-869b-470b-8803-f7a03208bc8e is deleted with it (deletionPolicy Delete)
+
+Orphans (deleted only with -orphans)
+  VolumeSnapshot app/pg-b5: its Backup pg-b5 no longer exists
+          content snapcontent-a56cd993-f2ba-499e-a1b9-2caf227ed1b9 is deleted with it (deletionPolicy Delete)
+  VolumeSnapshot app/pg-b5-wal: its Backup pg-b5 no longer exists
+          content snapcontent-7701b0ac-a447-4ca4-99b4-6a841aefd033 is deleted with it (deletionPolicy Delete)
+
+Summary: keep 2, delete 2 backups with 4 volume snapshots, 2 orphans
 ```
 
 ## Tests
