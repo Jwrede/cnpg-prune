@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cnpg-prune
+  namespace: cnpg-prune
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cnpg-prune
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cnpg-prune
+    spec:
+      serviceAccountName: cnpg-prune
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cnpg-prune
+          image: cnpg-prune
+          args: ["run", "-interval=1h", "-listen=:8080"]
+          ports:
+            - name: metrics
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cnpg-prune
+  namespace: cnpg-prune
+  labels:
+    app.kubernetes.io/name: cnpg-prune
+spec:
+  selector:
+    app.kubernetes.io/name: cnpg-prune
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
