@@ -159,6 +159,7 @@ YAML
 
 log "plan as of $FUTURE (in-cluster, with the deploy/ RBAC)"
 PLAN=$(job plan "plan" "-now=$FUTURE")
+echo "$PLAN"
 echo "$PLAN" | grep -Eq '^  KEEP +pg-b4 .*newest completed backup' || fail "pg-b4 not kept as newest"
 echo "$PLAN" | grep -Eq '^  KEEP +pg-b3 .*among the newest 2' || fail "pg-b3 not kept by keep-last"
 echo "$PLAN" | grep -Eq '^  DELETE +pg-b2 ' || fail "pg-b2 not planned for deletion"
@@ -174,12 +175,14 @@ log "apply as of $FUTURE with -orphans"
 B1_B2_SNAPS="$(k -n "$NS" get backup pg-b1 pg-b2 -o jsonpath='{.items[*].status.snapshotBackupStatus.elements[*].name}')"
 EXPECTED_SNAPS=$(( $(wc -w <<<"$B1_B2_SNAPS") + $(wc -w <<<"$B5_SNAPS") ))
 OUT=$(job apply "apply" "-now=$FUTURE" "-orphans")
+echo "$OUT"
 echo "$OUT" | grep -q "Deleted 2 backups and $EXPECTED_SNAPS volume snapshots" || fail "apply summary"
 
 LEFT=$(k -n "$NS" get backups -o jsonpath='{.items[*].metadata.name}')
 [[ "$LEFT" == "pg-b3 pg-b4" ]] || fail "backups left: $LEFT"
+# The snapshot controller removes its finalizers before the objects disappear.
 for s in $B1_B2_SNAPS $B5_SNAPS; do
-  ! k -n "$NS" get volumesnapshot "$s" >/dev/null 2>&1 || fail "VolumeSnapshot $s still exists"
+  k -n "$NS" wait --for=delete "volumesnapshot/$s" --timeout=120s || fail "VolumeSnapshot $s still exists"
 done
 KEPT_SNAPS=$(k -n "$NS" get backup pg-b3 pg-b4 -o jsonpath='{.items[*].status.snapshotBackupStatus.elements[*].name}')
 for s in $KEPT_SNAPS; do
@@ -196,6 +199,7 @@ k get volumesnapshotcontents
 
 log "second apply changes nothing"
 OUT=$(job apply-again "apply" "-now=$FUTURE" "-orphans")
+echo "$OUT"
 echo "$OUT" | grep -q "Deleted 0 backups and 0 volume snapshots" || fail "second apply was not a no-op"
 
 log "restore a new cluster from the kept backup pg-b3"
